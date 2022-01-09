@@ -16,24 +16,79 @@ package jsonb1
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/wire"
+	"github.com/jackc/pgx/v4"
 )
 
 func (h *storage) MsgCreateIndexes(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
-	// TODO https://github.com/FerretDB/FerretDB/issues/78
+	h.l.Info("Entered MsgCreateIndexes")
+	document, err := msg.Document()
+	if err != nil {
+		h.l.Error("Error when trying to create indexes")
+		return nil, lazyerrors.Error(err)
+	}
 
-	var reply wire.OpMsg
-	err := reply.SetSections(wire.OpMsgSection{
-		Documents: []types.Document{types.MustMakeDocument(
-			"ok", float64(1),
-		)},
-	})
+	m := document.Map()
+	collection := m["createIndexes"].(string)
+	db := m["$db"].(string)
+	indexes, _ := m["indexes"].(*types.Array)
+
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
 
-	return &reply, nil
+	// create an index for each specified
+	var sql string
+	for i := 0; i < indexes.Len(); i++ {
+		idx, err := indexes.Get(i)
+		if err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+
+		i := idx.(types.Document).Map()
+
+		sql := fmt.Sprintf("CREATE INDEX %s ON %s (", i["name"], pgx.Identifier{db, collection}.Sanitize())
+
+		keys, _ := i["key"].(types.Document)
+
+		// This is wrong. We need to improve this.
+
+		for count, k := range keys.Keys() {
+			if count != 0 {
+				sql += ", "
+			}
+
+			// TODO improve this to support nested document indexing (e.g. index a.b.c, a.b.d, etc).
+			// This needs to be revisited entirely.
+			sql += "(_jsonb->>" + strings.ReplaceAll(pgx.Identifier{k}.Sanitize()+")", `"`, `'`)
+		}
+
+		sql += ")"
+
+		_, err = h.pgPool.Exec(ctx, sql)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var res wire.OpMsg
+	err = res.SetSections(wire.OpMsgSection{
+		Documents: []types.Document{types.MustMakeDocument(
+			"ok", float64(1),
+			"note", fmt.Sprintf("sql: %s", sql),
+		)},
+	})
+
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+	return &res, nil
+
+	return h.MsgCreateIndexes(ctx, msg)
 }

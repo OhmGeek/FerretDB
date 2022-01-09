@@ -157,9 +157,6 @@ func (h *Handler) handleOpMsg(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 	case "buildinfo":
 		return h.shared.MsgBuildInfo(ctx, msg)
 	case "collstats":
-		// This command implements the follow database methods:
-		// 	- db.collection.stats()
-		// 	- db.collection.dataSize()
 		return h.shared.MsgCollStats(ctx, msg)
 	case "create":
 		return h.shared.MsgCreate(ctx, msg)
@@ -190,15 +187,18 @@ func (h *Handler) handleOpMsg(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 	case "serverstatus":
 		return h.shared.MsgServerStatus(ctx, msg)
 
-	case "createindexes", "delete", "find", "insert", "update", "count":
+	case "createindexes", "listindexes", "delete", "find", "insert", "update", "count":
 		storage, err := h.msgStorage(ctx, msg)
 		if err != nil {
+			h.l.Info("Error " + err.Error())
 			return nil, lazyerrors.Error(err)
 		}
 
 		switch cmd {
 		case "createindexes":
 			return storage.MsgCreateIndexes(ctx, msg)
+		case "listindexes":
+			return storage.MsgListIndexes(ctx, msg)
 		case "delete":
 			return storage.MsgDelete(ctx, msg)
 		case "find", "count":
@@ -241,7 +241,8 @@ func (h *Handler) msgStorage(ctx context.Context, msg *wire.OpMsg) (common.Stora
 	m := document.Map()
 	command := document.Command()
 
-	if command == "createindexes" {
+	h.l.Info("Storage command reached: " + command)
+	if command == "createindexes" || command == "listindexes" {
 		// TODO https://github.com/FerretDB/FerretDB/issues/78
 		return h.jsonb1, nil
 	}

@@ -22,6 +22,7 @@ import (
 
 type Storage interface {
 	MsgCreateIndexes(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
+	MsgListIndexes(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
 	MsgDelete(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
 	MsgFindOrCount(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
 	MsgInsert(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
